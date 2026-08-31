@@ -28,7 +28,7 @@ export const SECTIONS: Section[] = [
     id: "sql",
     title: "SQL",
     description:
-      "Write SQL queries for the given schemas. These are reviewed manually by your recruiter.",
+      "Write SQL queries for the given schemas and run them against sample data. These are reviewed manually by your recruiter.",
   },
 ];
 
@@ -309,6 +309,27 @@ const SQL_QUESTIONS: SqlQuestion[] = [
       "employees(id INT, name TEXT, department TEXT, salary INT)",
     prompt:
       "Write a SQL query that returns the name and salary of the 3 highest-paid employees, ordered from highest to lowest salary.",
+    sampleData: [
+      {
+        name: "employees",
+        columns: [
+          { name: "id", type: "INT" },
+          { name: "name", type: "TEXT" },
+          { name: "department", type: "TEXT" },
+          { name: "salary", type: "INT" },
+        ],
+        rows: [
+          [1, "Alice", "Engineering", 120000],
+          [2, "Bob", "Sales", 95000],
+          [3, "Carol", "Engineering", 110000],
+          [4, "Dan", "Marketing", 80000],
+          [5, "Eve", "Engineering", 130000],
+          [6, "Frank", "Sales", 90000],
+          [7, "Grace", "Engineering", 115000],
+          [8, "Heidi", "Engineering", 105000],
+        ],
+      },
+    ],
     points: 8,
   },
   {
@@ -319,6 +340,30 @@ const SQL_QUESTIONS: SqlQuestion[] = [
       "employees(id INT, name TEXT, department TEXT, salary INT)",
     prompt:
       "Write a SQL query that returns each department that has more than 5 employees, along with the number of employees in that department.",
+    sampleData: [
+      {
+        name: "employees",
+        columns: [
+          { name: "id", type: "INT" },
+          { name: "name", type: "TEXT" },
+          { name: "department", type: "TEXT" },
+          { name: "salary", type: "INT" },
+        ],
+        rows: [
+          [1, "Alice", "Engineering", 90000],
+          [2, "Bob", "Engineering", 92000],
+          [3, "Carol", "Engineering", 95000],
+          [4, "Dan", "Engineering", 88000],
+          [5, "Eve", "Engineering", 99000],
+          [6, "Frank", "Engineering", 91000],
+          [7, "Grace", "Sales", 70000],
+          [8, "Heidi", "Sales", 72000],
+          [9, "Ivan", "Sales", 71000],
+          [10, "Judy", "Support", 60000],
+          [11, "Karl", "Support", 61000],
+        ],
+      },
+    ],
     points: 8,
   },
   {
@@ -326,9 +371,38 @@ const SQL_QUESTIONS: SqlQuestion[] = [
     id: "sql-3",
     title: "Customer order totals",
     schema:
-      "customers(id INT, name TEXT)\norders(id INT, customer_id INT, total NUMERIC)",
+      "customers(id INT, name TEXT)\norders(id INT, customer_id INT, amount NUMERIC)",
     prompt:
-      "Write a SQL query that lists every customer's name together with the SUM of their order totals. Customers with no orders should appear with a total of 0.",
+      "Write a SQL query that lists every customer's name together with the SUM of their order amounts. Customers with no orders should appear with a total of 0.",
+    sampleData: [
+      {
+        name: "customers",
+        columns: [
+          { name: "id", type: "INT" },
+          { name: "name", type: "TEXT" },
+        ],
+        rows: [
+          [1, "Acme"],
+          [2, "Globex"],
+          [3, "Initech"],
+          [4, "Umbrella"],
+        ],
+      },
+      {
+        name: "orders",
+        columns: [
+          { name: "id", type: "INT" },
+          { name: "customer_id", type: "INT" },
+          { name: "amount", type: "NUMERIC" },
+        ],
+        rows: [
+          [1, 1, 100.5],
+          [2, 1, 250],
+          [3, 1, 75],
+          [4, 2, 50],
+        ],
+      },
+    ],
     points: 8,
   },
 ];

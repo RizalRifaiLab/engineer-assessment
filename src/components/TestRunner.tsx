@@ -16,6 +16,8 @@ import type {
   SanitizedMcqQuestion,
   SanitizedSqlQuestion,
 } from "@/lib/types";
+import { CodeEditor } from "./CodeEditor";
+import { runSqlQuery, type SqlRunResult } from "@/lib/sqlRunner";
 
 interface LoadedData {
   status: string;
@@ -49,6 +51,16 @@ function stringify(v: unknown): string {
   return JSON.stringify(v);
 }
 
+function difficultyColor(d: string): string {
+  if (d === "Easy") return "bg-green-100 text-green-700";
+  if (d === "Medium") return "bg-amber-100 text-amber-700";
+  return "bg-red-100 text-red-700";
+}
+
+function displayCell(v: string | number | null | undefined): string {
+  return v === null || v === undefined ? "NULL" : String(v);
+}
+
 export function TestRunner({ attemptId }: { attemptId: string }) {
   const router = useRouter();
   const [data, setData] = useState<LoadedData | null>(null);
@@ -66,6 +78,7 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     Record<string, { label: string; pass: boolean; out: string; exp: string; error?: string }[]>
   >({});
   const [running, setRunning] = useState<Record<string, boolean>>({});
+  const [sqlResults, setSqlResults] = useState<Record<string, SqlRunResult>>({});
 
   const answersRef = useRef(answers);
   useEffect(() => {
@@ -266,6 +279,32 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     setAnswers((a) => ({ ...a, sql: { ...a.sql, [qid]: text } }));
   }
 
+  /** Reset a coding question back to the starter for its current language. */
+  function resetCode(qid: string) {
+    setAnswers((a) => {
+      const q = data?.questions.coding.find((x) => x.id === qid);
+      if (!q) return a;
+      const cur = a.coding[qid] ? normCodingAnswer(a.coding[qid]) : null;
+      const lang = cur?.language ?? defaultStarter(q).language;
+      const starter = starterFor(q, lang);
+      return {
+        ...a,
+        coding: {
+          ...a.coding,
+          [qid]: { language: lang, code: starter ? starter.starterCode : "" },
+        },
+      };
+    });
+  }
+
+  /** Run the candidate's SQL against the question's sample data. */
+  function runSql(qid: string) {
+    const q = data?.questions.sql.find((x) => x.id === qid);
+    if (!q) return;
+    const result = runSqlQuery(q.sampleData, answers.sql[qid] ?? "");
+    setSqlResults((prev) => ({ ...prev, [qid]: result }));
+  }
+
   /** The candidate's current answer for a coding question (or the starter). */
   function currentAnswer(q: SanitizedCodingQuestion): CodingAnswer {
     return answers.coding[q.id]
@@ -423,83 +462,133 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
             const ans = currentAnswer(q);
             const starter = starterFor(q, ans.language);
             return (
-            <div
-              key={q.id}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <div className="mb-1 flex items-center gap-2">
-                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-indigo-700">
-                  {q.difficulty}
-                </span>
-                <span className="text-xs text-slate-400">{q.points} pts</span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold">{q.title}</h2>
-                <label className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>Language</span>
-                  <select
-                    value={ans.language}
-                    onChange={(e) => setLanguage(q.id, e.target.value as CodeLanguage)}
-                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-indigo-500"
-                  >
-                    {q.languages.map((l) => (
-                      <option key={l.language} value={l.language}>
-                        {l.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <p className="mt-1 font-code text-sm text-slate-500">
-                {starter?.signature ?? ans.language}
-              </p>
-              <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
-                {q.prompt}
-              </p>
-
-              <textarea
-                value={ans.code}
-                onChange={(e) => setCode(q.id, e.target.value)}
-                spellCheck={false}
-                rows={8}
-                className="font-code mt-4 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-200"
-              />
-
-              <div className="mt-3 flex items-center gap-3">
-                <button
-                  onClick={() => runExamples(q)}
-                  disabled={!!running[q.id]}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {running[q.id] ? "Running…" : "Run examples"}
-                </button>
-                <span className="text-xs text-slate-400">
-                  Runs the visible examples in {ans.language} for instant feedback.
-                </span>
-              </div>
-
-              {runResults[q.id] && (
-                <div className="mt-3 space-y-1 rounded-lg bg-slate-50 p-3">
-                  {runResults[q.id].map((r, ri) => (
-                    <div key={ri} className="font-code text-sm">
-                      {r.error ? (
-                        <p className="text-red-600">
-                          ✗ {r.label} → {r.error}
-                        </p>
-                      ) : r.pass ? (
-                        <p className="text-green-700">
-                          ✓ {r.label} → {r.out}
-                        </p>
-                      ) : (
-                        <p className="text-red-600">
-                          ✗ {r.label} → got {r.out}, expected {r.exp}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+              <div
+                key={q.id}
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+              >
+                {/* Header */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${difficultyColor(q.difficulty)}`}
+                    >
+                      {q.difficulty}
+                    </span>
+                    <h2 className="text-base font-semibold">{q.title}</h2>
+                    <span className="text-xs text-slate-400">{q.points} pts</span>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="grid divide-y divide-slate-200 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                  {/* Problem pane */}
+                  <div className="p-4">
+                    <p className="whitespace-pre-wrap text-sm text-slate-700">
+                      {q.prompt}
+                    </p>
+                    {q.examples.map((ex, i) => (
+                      <div key={i} className="mt-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Example {i + 1}
+                        </p>
+                        <div className="mt-1 space-y-1">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span className="mr-2 text-xs font-semibold text-slate-500">
+                              Input
+                            </span>
+                            <span className="font-code text-sm text-slate-800">
+                              {formatCall(ex.args)}
+                            </span>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span className="mr-2 text-xs font-semibold text-slate-500">
+                              Output
+                            </span>
+                            <span className="font-code text-sm text-slate-800">
+                              {stringify(ex.expected)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Editor pane */}
+                  <div className="flex flex-col p-4">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-500">
+                        <span>Language</span>
+                        <select
+                          value={ans.language}
+                          onChange={(e) =>
+                            setLanguage(q.id, e.target.value as CodeLanguage)
+                          }
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-indigo-500"
+                        >
+                          {q.languages.map((l) => (
+                            <option key={l.language} value={l.language}>
+                              {l.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        onClick={() => resetCode(q.id)}
+                        title="Restore the starter code for the selected language"
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <p className="font-code mb-2 text-xs text-slate-400">
+                      {starter?.signature ?? ans.language}
+                    </p>
+                    <CodeEditor
+                      value={ans.code}
+                      onChange={(v) => setCode(q.id, v)}
+                      ariaLabel={`Code for ${q.title}`}
+                    />
+                    <div className="mt-3 flex items-center gap-3">
+                      <button
+                        onClick={() => runExamples(q)}
+                        disabled={!!running[q.id]}
+                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {running[q.id] ? "Running…" : "Run code"}
+                      </button>
+                      <span className="text-xs text-slate-400">
+                        Runs the examples in {ans.language} for instant feedback.
+                      </span>
+                    </div>
+
+                    {runResults[q.id] && (
+                      <div className="mt-3 rounded-lg bg-slate-900 p-3">
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Output
+                        </p>
+                        <div className="space-y-1">
+                          {runResults[q.id].map((r, ri) => (
+                            <div key={ri} className="font-code text-sm">
+                              {r.error ? (
+                                <p className="text-red-400">
+                                  ✗ {r.label} → {r.error}
+                                </p>
+                              ) : r.pass ? (
+                                <p className="text-green-400">
+                                  ✓ {r.label} → {r.out}
+                                </p>
+                              ) : (
+                                <p className="text-red-400">
+                                  ✗ {r.label} → got {r.out}, expected {r.exp}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -508,34 +597,151 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
       {/* SQL section */}
       {section === "sql" && (
         <div className="space-y-6">
-          {questions.sql.map((q) => (
-            <div
-              key={q.id}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <div className="mb-1 flex items-center gap-2">
-                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-emerald-700">
-                  SQL
-                </span>
-                <span className="text-xs text-slate-400">{q.points} pts</span>
+          {questions.sql.map((q) => {
+            const result = sqlResults[q.id];
+            return (
+              <div
+                key={q.id}
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+              >
+                {/* Header */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-emerald-700">
+                      SQL
+                    </span>
+                    <h2 className="text-base font-semibold">{q.title}</h2>
+                    <span className="text-xs text-slate-400">{q.points} pts</span>
+                  </div>
+                </div>
+
+                <div className="grid divide-y divide-slate-200 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                  {/* Problem + sample data pane */}
+                  <div className="p-4">
+                    {q.schema && (
+                      <pre className="font-code overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-emerald-200">
+                        {q.schema}
+                      </pre>
+                    )}
+                    <p className="mt-3 text-sm text-slate-700">{q.prompt}</p>
+
+                    {q.sampleData?.map((t) => (
+                      <div key={t.name} className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Table: {t.name}
+                        </p>
+                        <div className="mt-1 overflow-x-auto rounded-lg border border-slate-200">
+                          <table className="w-full text-left text-sm">
+                            <thead>
+                              <tr className="bg-slate-50">
+                                {t.columns.map((c) => (
+                                  <th
+                                    key={c.name}
+                                    className="border-b border-slate-200 px-3 py-2 font-semibold text-slate-600"
+                                  >
+                                    {c.name}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {t.rows.map((row, ri) => (
+                                <tr
+                                  key={ri}
+                                  className={ri % 2 ? "bg-slate-50/50" : ""}
+                                >
+                                  {row.map((cell, ci) => (
+                                    <td
+                                      key={ci}
+                                      className="font-code border-b border-slate-100 px-3 py-1.5 text-xs text-slate-700"
+                                    >
+                                      {displayCell(cell)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Query editor + output pane */}
+                  <div className="flex flex-col p-4">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Your query
+                      </span>
+                      <button
+                        onClick={() => runSql(q.id)}
+                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                      >
+                        Run
+                      </button>
+                    </div>
+                    <CodeEditor
+                      value={answers.sql[q.id] ?? ""}
+                      onChange={(v) => setSql(q.id, v)}
+                      minRows={6}
+                      placeholder="SELECT ..."
+                      ariaLabel={`SQL for ${q.title}`}
+                    />
+
+                    {result && (
+                      <div className="mt-3 rounded-lg bg-slate-900 p-3">
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Output
+                        </p>
+                        {result.ok ? (
+                          result.columns.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-sm">
+                                <thead>
+                                  <tr>
+                                    {result.columns.map((c) => (
+                                      <th
+                                        key={c}
+                                        className="px-2 py-1 font-semibold text-emerald-200"
+                                      >
+                                        {c}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {result.rows.map((row, ri) => (
+                                    <tr key={ri}>
+                                      {result.columns.map((c) => (
+                                        <td
+                                          key={c}
+                                          className="font-code px-2 py-1 text-xs text-slate-200"
+                                        >
+                                          {displayCell(row[c])}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="font-code text-xs text-slate-400">
+                              Query ran — no rows returned.
+                            </p>
+                          )
+                        ) : (
+                          <p className="font-code text-sm text-red-400">
+                            ✗ {result.error}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <h2 className="text-lg font-semibold">{q.title}</h2>
-              {q.schema && (
-                <pre className="font-code mt-2 overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-emerald-200">
-                  {q.schema}
-                </pre>
-              )}
-              <p className="mt-3 text-sm text-slate-700">{q.prompt}</p>
-              <textarea
-                value={answers.sql[q.id] ?? ""}
-                onChange={(e) => setSql(q.id, e.target.value)}
-                spellCheck={false}
-                rows={5}
-                placeholder="SELECT ..."
-                className="font-code mt-4 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-200"
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

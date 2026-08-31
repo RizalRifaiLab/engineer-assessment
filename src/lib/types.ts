@@ -38,12 +38,21 @@ export interface CodingQuestion {
   points: number;
 }
 
+/** A sample table the candidate can run their SQL against. */
+export interface SqlSampleTable {
+  name: string;
+  columns: { name: string; type: "INT" | "TEXT" | "NUMERIC" }[];
+  rows: (string | number | null)[][];
+}
+
 export interface SqlQuestion {
   kind: "sql";
   id: string;
   title: string;
   schema?: string;
   prompt: string;
+  /** Seed tables (and rows) the candidate's query runs against in the editor. */
+  sampleData?: SqlSampleTable[];
   points: number;
 }
 
@@ -84,6 +93,7 @@ export interface SanitizedSqlQuestion {
   title: string;
   schema?: string;
   prompt: string;
+  sampleData?: SqlSampleTable[];
   points: number;
 }
 
