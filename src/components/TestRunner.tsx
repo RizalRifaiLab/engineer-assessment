@@ -65,6 +65,7 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
   }, [answers]);
 
   const submittedRef = useRef(false);
+  const submitRef = useRef<() => void>(() => {});
 
   // Load attempt
   useEffect(() => {
@@ -81,6 +82,8 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
           return;
         }
         setData(json);
+        const deadline = new Date(json.deadlineAt).getTime();
+        setTimeLeft(Math.max(0, Math.floor((deadline - Date.now()) / 1000)));
         const saved = json.savedAnswers ?? { mcq: {}, coding: {}, sql: {} };
         // prefill coding editors with starter code when empty
         const coding: Record<string, string> = { ...saved.coding };
@@ -96,12 +99,21 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     })();
   }, [attemptId, router]);
 
-  // Countdown timer
+  // Countdown timer. Auto-submits only when the deadline is actually reached —
+  // NOT when timeLeft === 0 from state, since that fires immediately on mount.
   useEffect(() => {
     if (!data) return;
     const deadline = new Date(data.deadlineAt).getTime();
-    const tick = () =>
-      setTimeLeft(Math.max(0, Math.floor((deadline - Date.now()) / 1000)));
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.floor((deadline - Date.now()) / 1000)
+      );
+      setTimeLeft(remaining);
+      if (remaining <= 0 && !submittedRef.current) {
+        submitRef.current();
+      }
+    };
     tick();
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
@@ -144,13 +156,10 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     }
   }
 
-  // Auto-submit when the timer hits zero
+  // Keep the timer's auto-submit handler pointing at the latest closure
   useEffect(() => {
-    if (data && timeLeft === 0 && !submittedRef.current) {
-      submit();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, data]);
+    submitRef.current = submit;
+  });
 
   if (loading) {
     return (
