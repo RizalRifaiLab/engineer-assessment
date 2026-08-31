@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { isAdmin } from "@/lib/auth";
+import { runCodeInLanguage } from "@/lib/codeRunner";
 import { getAttempt, getInviteById } from "@/lib/db";
-import { runCode } from "@/lib/codeRunner";
-import { deepEqual } from "@/lib/scoring";
+import { normCodingAnswer, starterFor } from "@/lib/languages";
 import { ReviewAttempt } from "@/components/ReviewAttempt";
 import type {
   CandidateAnswers,
@@ -54,30 +54,64 @@ export default async function ReviewPage({
     selected: answers.mcq?.[q.id] ?? null,
   }));
 
-  const coding = (questions.coding ?? []).map((q) => {
-    const code = answers.coding?.[q.id] ?? "";
-    const tests = q.testCases.map((tc) => {
-      const r = runCode(code, tc.args);
-      const passed = r.ok && deepEqual(r.result, tc.expected);
+  const coding = await Promise.all(
+    (questions.coding ?? []).map(async (q) => {
+      const ans = normCodingAnswer(answers.coding?.[q.id]);
+      const code = ans.code;
+      // Legacy questions (created before multi-language) had signature/starterCode.
+      const signature =
+        starterFor(q as CodingQuestion, ans.language)?.signature ??
+        (q as CodingQuestion & { signature?: string }).signature ??
+        ans.language;
+
+      let tests: {
+        args: string;
+        expected: string;
+        got: string;
+        passed: boolean;
+      }[];
+      if (!code.trim()) {
+        tests = q.testCases.map((tc) => ({
+          args: JSON.stringify(tc.args),
+          expected: JSON.stringify(tc.expected),
+          got: "no code submitted",
+          passed: false,
+        }));
+      } else {
+        const res = await runCodeInLanguage(
+          ans.language,
+          code,
+          q.testCases
+        );
+        tests = q.testCases.map((tc, i) => {
+          const t = res.tests[i];
+          return {
+            args: JSON.stringify(tc.args),
+            expected: JSON.stringify(tc.expected),
+            got: !res.ok
+              ? `error: ${res.serviceError}`
+              : t.error
+                ? `error: ${t.error}`
+                : (t.got ?? ""),
+            passed: res.ok ? !!t?.passed : false,
+          };
+        });
+      }
+
       return {
-        args: JSON.stringify(tc.args),
-        expected: JSON.stringify(tc.expected),
-        got: r.ok ? JSON.stringify(r.result) : `error: ${r.error}`,
-        passed,
+        id: q.id,
+        title: q.title,
+        difficulty: q.difficulty,
+        prompt: q.prompt,
+        signature,
+        language: ans.language,
+        points: q.points,
+        code,
+        tests,
+        passed: tests.every((t) => t.passed),
       };
-    });
-    return {
-      id: q.id,
-      title: q.title,
-      difficulty: q.difficulty,
-      prompt: q.prompt,
-      signature: q.signature,
-      points: q.points,
-      code,
-      tests,
-      passed: tests.every((t) => t.passed),
-    };
-  });
+    })
+  );
 
   const sql = (questions.sql ?? []).map((q) => ({
     id: q.id,

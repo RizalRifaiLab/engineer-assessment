@@ -1,4 +1,6 @@
-import { runCode } from "./codeRunner";
+import { runCodeInLanguage } from "./codeRunner";
+import { deepEqual } from "./compare";
+import { normCodingAnswer } from "./languages";
 import type {
   CandidateAnswers,
   CodingQuestion,
@@ -9,23 +11,7 @@ import type {
   SqlQuestion,
 } from "./types";
 
-export function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b)) {
-    return true;
-  }
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => deepEqual(v, b[i]));
-  }
-  if (a && b && typeof a === "object" && typeof b === "object") {
-    const ka = Object.keys(a as object).sort();
-    const kb = Object.keys(b as object).sort();
-    if (ka.length !== kb.length) return false;
-    return ka.every((k, i) => k === kb[i] && deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
-  }
-  return false;
-}
+export { deepEqual } from "./compare";
 
 /** Strip correct answers / test cases / explanations before sending to the client. */
 export function sanitizeQuestions(questions: Question[]): SanitizedQuestion[] {
@@ -58,7 +44,10 @@ export interface GradingResult {
   detail: GradingDetail;
 }
 
-export function gradeAnswers(questions: FullQuestionSet, answers: CandidateAnswers): GradingResult {
+export async function gradeAnswers(
+  questions: FullQuestionSet,
+  answers: CandidateAnswers
+): Promise<GradingResult> {
   let mcqScore = 0;
   let mcqTotal = 0;
   let codingScore = 0;
@@ -72,21 +61,38 @@ export function gradeAnswers(questions: FullQuestionSet, answers: CandidateAnswe
 
   for (const q of questions.mcq) {
     mcqTotal += q.points;
-    const selected = Number.isInteger(answers.mcq[q.id]) ? answers.mcq[q.id] : null;
+    const selected = Number.isInteger(answers.mcq[q.id])
+      ? answers.mcq[q.id]
+      : null;
     const correct = selected === q.correctIndex;
     if (correct) mcqScore += q.points;
     detail.mcq[q.id] = { selected, correct };
   }
 
-  for (const q of questions.coding) {
+  // Remote-language grading makes round-trips, so grade the coding questions in
+  // parallel to stay well under the platform function timeout.
+  const codingResults = await Promise.all(
+    questions.coding.map(async (q) => {
+      const ans = normCodingAnswer(answers.coding[q.id]);
+      const code = ans.code.trim();
+      let tests: { passed: boolean; error?: string }[];
+      if (!code) {
+        tests = q.testCases.map(() => ({
+          passed: false,
+          error: "No code submitted.",
+        }));
+      } else {
+        const res = await runCodeInLanguage(ans.language, code, q.testCases);
+        tests = res.ok
+          ? res.tests
+          : q.testCases.map(() => ({ passed: false, error: res.serviceError }));
+      }
+      const passed = tests.every((t) => t.passed);
+      return { q, tests, passed };
+    })
+  );
+  for (const { q, tests, passed } of codingResults) {
     codingTotal += q.points;
-    const code = (answers.coding[q.id] || "").trim();
-    const tests = q.testCases.map((tc) => {
-      if (!code) return { passed: false, error: "No code submitted." };
-      const r = runCode(code, tc.args);
-      return { passed: r.ok && deepEqual(r.result, tc.expected), error: r.error };
-    });
-    const passed = tests.every((t) => t.passed);
     if (passed) codingScore += q.points;
     detail.coding[q.id] = { passed, tests };
   }

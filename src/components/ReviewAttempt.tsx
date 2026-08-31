@@ -46,6 +46,7 @@ interface CodingReview {
   difficulty: string;
   prompt: string;
   signature: string;
+  language: string;
   points: number;
   code: string;
   tests: { args: string; expected: string; got: string; passed: boolean }[];
@@ -325,7 +326,7 @@ export function ReviewAttempt({
                 </span>
               </div>
               <p className="mt-1 font-code text-xs text-slate-400">
-                {q.signature} · {q.points} pts
+                {q.signature} · {q.language} · {q.points} pts
               </p>
               <pre className="font-code mt-3 overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-100">
                 {q.code || "// no code submitted"}

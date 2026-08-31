@@ -2,9 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { runCodeInBrowser } from "@/lib/browserRunner";
+import {
+  codingAnswered,
+  defaultStarter,
+  normCodingAnswer,
+  starterFor,
+} from "@/lib/languages";
 import type {
   CandidateAnswers,
+  CodeLanguage,
+  CodingAnswer,
   SanitizedCodingQuestion,
   SanitizedMcqQuestion,
   SanitizedSqlQuestion,
@@ -58,6 +65,7 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
   const [runResults, setRunResults] = useState<
     Record<string, { label: string; pass: boolean; out: string; exp: string; error?: string }[]>
   >({});
+  const [running, setRunning] = useState<Record<string, boolean>>({});
 
   const answersRef = useRef(answers);
   useEffect(() => {
@@ -85,10 +93,17 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
         const deadline = new Date(json.deadlineAt).getTime();
         setTimeLeft(Math.max(0, Math.floor((deadline - Date.now()) / 1000)));
         const saved = json.savedAnswers ?? { mcq: {}, coding: {}, sql: {} };
-        // prefill coding editors with starter code when empty
-        const coding: Record<string, string> = { ...saved.coding };
+        // prefill coding editors with starter code (in the default language)
+        // when the candidate hasn't written anything yet.
+        const coding: CandidateAnswers["coding"] = {};
         for (const q of json.questions.coding) {
-          if (!coding[q.id]) coding[q.id] = q.starterCode;
+          const ans = normCodingAnswer(saved.coding[q.id]);
+          if (saved.coding?.[q.id]) {
+            coding[q.id] = ans;
+          } else {
+            const def = defaultStarter(q);
+            coding[q.id] = { language: def.language, code: def.starterCode };
+          }
         }
         setAnswers({ mcq: saved.mcq ?? {}, coding, sql: saved.sql ?? {} });
       } catch {
@@ -167,10 +182,9 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     if (!data) return;
     const { mcq, coding, sql } = data.questions;
     const allMcq = mcq.every((q) => answers.mcq[q.id] !== undefined);
-    const allCoding = coding.every((q) => {
-      const c = (answers.coding[q.id] ?? "").trim();
-      return c !== "" && c !== q.starterCode.trim();
-    });
+    const allCoding = coding.every((q) =>
+      codingAnswered(normCodingAnswer(answers.coding[q.id]), q)
+    );
     const allSql = sql.every((q) => (answers.sql[q.id] ?? "").trim() !== "");
     if (allMcq && allCoding && allSql && !submittedRef.current) {
       submitRef.current();
@@ -202,8 +216,8 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
   };
   const answered: Record<SectionId, number> = {
     mcq: questions.mcq.filter((q) => answers.mcq[q.id] !== undefined).length,
-    coding: questions.coding.filter(
-      (q) => (answers.coding[q.id] || "").trim() !== "" && answers.coding[q.id] !== q.starterCode
+    coding: questions.coding.filter((q) =>
+      codingAnswered(normCodingAnswer(answers.coding[q.id]), q)
     ).length,
     sql: questions.sql.filter((q) => (answers.sql[q.id] || "").trim() !== "").length,
   };
@@ -217,28 +231,98 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     setAnswers((a) => ({ ...a, mcq: { ...a.mcq, [qid]: idx } }));
   }
   function setCode(qid: string, code: string) {
-    setAnswers((a) => ({ ...a, coding: { ...a.coding, [qid]: code } }));
+    setAnswers((a) => {
+      const stored = a.coding[qid]
+        ? normCodingAnswer(a.coding[qid])
+        : undefined;
+      const language = stored?.language ?? "javascript";
+      return {
+        ...a,
+        coding: { ...a.coding, [qid]: { language, code } },
+      };
+    });
+  }
+  function setLanguage(qid: string, language: CodeLanguage) {
+    setAnswers((a) => {
+      const q = data?.questions.coding.find((x) => x.id === qid);
+      if (!q) return a;
+      const old = a.coding[qid] ? normCodingAnswer(a.coding[qid]) : null;
+      const oldStarter = old ? starterFor(q, old.language) : null;
+      const newStarter = starterFor(q, language);
+      // If the candidate never touched the code, swap in the new starter so
+      // the signature stays correct for the chosen language.
+      const untouched = oldStarter
+        ? old?.code.trim() === oldStarter.starterCode.trim()
+        : true;
+      const code =
+        untouched && newStarter ? newStarter.starterCode : old?.code ?? "";
+      return {
+        ...a,
+        coding: { ...a.coding, [qid]: { language, code } },
+      };
+    });
   }
   function setSql(qid: string, text: string) {
     setAnswers((a) => ({ ...a, sql: { ...a.sql, [qid]: text } }));
   }
 
+  /** The candidate's current answer for a coding question (or the starter). */
+  function currentAnswer(q: SanitizedCodingQuestion): CodingAnswer {
+    return answers.coding[q.id]
+      ? normCodingAnswer(answers.coding[q.id])
+      : { language: defaultStarter(q).language, code: defaultStarter(q).starterCode };
+  }
+
+  function formatCall(args: unknown[]): string {
+    return args.length === 1
+      ? `solve(${stringify(args[0])})`
+      : `solve(${stringify(args)})`;
+  }
+
+  /** Compare outputs ignoring whitespace (Judge0 prints "[0, 1]" vs JS "[0,1]"). */
+  function sameOutput(a: string, b: string): boolean {
+    return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+  }
+
   async function runExamples(q: SanitizedCodingQuestion) {
-    const code = answers.coding[q.id] || "";
+    setRunning((prev) => ({ ...prev, [q.id]: true }));
+    const ans = currentAnswer(q);
     const results: { label: string; pass: boolean; out: string; exp: string; error?: string }[] = [];
-    for (const ex of q.examples) {
-      const r = await runCodeInBrowser(code, ex.args);
-      const out = r.ok ? stringify(r.result) : "error";
-      const exp = stringify(ex.expected);
-      results.push({
-        label: `solve(${stringify(ex.args)})`,
-        pass: r.ok && out === exp,
-        out,
-        exp,
-        error: r.error,
-      });
+    try {
+      for (const ex of q.examples) {
+        let ok = false;
+        let out = "";
+        let error: string | undefined;
+        try {
+          const res = await fetch("/api/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              language: ans.language,
+              code: ans.code,
+              args: ex.args,
+            }),
+          });
+          const data = await res.json();
+          ok = data.ok === true;
+          out = data.output ?? "";
+          error = data.error;
+        } catch {
+          error = "Network error while running your code.";
+        }
+        const exp = stringify(ex.expected);
+        results.push({
+          label: formatCall(ex.args),
+          pass: ok && sameOutput(out, exp),
+          out,
+          exp,
+          error,
+        });
+      }
+    } finally {
+      setRunResults((prev) => ({ ...prev, [q.id]: results }));
+      setRunning((prev) => ({ ...prev, [q.id]: false }));
     }
-    setRunResults((prev) => ({ ...prev, [q.id]: results }));
   }
 
   return (
@@ -335,7 +419,10 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
       {/* Coding section */}
       {section === "coding" && (
         <div className="space-y-6">
-          {questions.coding.map((q) => (
+          {questions.coding.map((q) => {
+            const ans = currentAnswer(q);
+            const starter = starterFor(q, ans.language);
+            return (
             <div
               key={q.id}
               className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -346,16 +433,32 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
                 </span>
                 <span className="text-xs text-slate-400">{q.points} pts</span>
               </div>
-              <h2 className="text-lg font-semibold">{q.title}</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">{q.title}</h2>
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  <span>Language</span>
+                  <select
+                    value={ans.language}
+                    onChange={(e) => setLanguage(q.id, e.target.value as CodeLanguage)}
+                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-indigo-500"
+                  >
+                    {q.languages.map((l) => (
+                      <option key={l.language} value={l.language}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <p className="mt-1 font-code text-sm text-slate-500">
-                {q.signature}
+                {starter?.signature ?? ans.language}
               </p>
               <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
                 {q.prompt}
               </p>
 
               <textarea
-                value={answers.coding[q.id] ?? q.starterCode}
+                value={ans.code}
                 onChange={(e) => setCode(q.id, e.target.value)}
                 spellCheck={false}
                 rows={8}
@@ -365,12 +468,13 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
               <div className="mt-3 flex items-center gap-3">
                 <button
                   onClick={() => runExamples(q)}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                  disabled={!!running[q.id]}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60"
                 >
-                  Run examples
+                  {running[q.id] ? "Running…" : "Run examples"}
                 </button>
                 <span className="text-xs text-slate-400">
-                  Runs only against the visible examples for instant feedback.
+                  Runs the visible examples in {ans.language} for instant feedback.
                 </span>
               </div>
 
@@ -396,7 +500,8 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

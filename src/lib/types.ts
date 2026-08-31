@@ -17,14 +17,22 @@ export interface TestCase {
   expected: unknown;
 }
 
+export type CodeLanguage = "javascript" | "python" | "cpp" | "java";
+
+export interface LanguageStarter {
+  language: CodeLanguage;
+  label: string;
+  signature: string;
+  starterCode: string;
+}
+
 export interface CodingQuestion {
   kind: "coding";
   id: string;
   title: string;
   difficulty: "Easy" | "Medium" | "Hard";
   prompt: string;
-  signature: string;
-  starterCode: string;
+  languages: LanguageStarter[];
   examples: TestCase[];
   testCases: TestCase[];
   points: number;
@@ -65,8 +73,7 @@ export interface SanitizedCodingQuestion {
   title: string;
   difficulty: string;
   prompt: string;
-  signature: string;
-  starterCode: string;
+  languages: LanguageStarter[];
   examples: TestCase[];
   points: number;
 }
@@ -85,9 +92,15 @@ export type SanitizedQuestion =
   | SanitizedCodingQuestion
   | SanitizedSqlQuestion;
 
+export interface CodingAnswer {
+  language: CodeLanguage;
+  code: string;
+}
+
 export interface CandidateAnswers {
   mcq: Record<string, number>;
-  coding: Record<string, string>;
+  /** Per question: the chosen language plus the candidate's code. */
+  coding: Record<string, CodingAnswer>;
   sql: Record<string, string>;
 }
 

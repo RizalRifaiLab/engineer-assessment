@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 interface StoredQuestions {
   mcq: McqQuestion[];
@@ -97,7 +98,7 @@ export async function POST(
 
     const questions = readQuestions(attempt.answers);
     const answers = body.answers ?? emptyAnswers();
-    const graded = gradeAnswers(questions, answers);
+    const graded = await gradeAnswers(questions, answers);
 
     await finalizeAttempt(id, {
       mcqScore: graded.breakdown.mcqScore,

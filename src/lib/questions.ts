@@ -22,7 +22,7 @@ export const SECTIONS: Section[] = [
     id: "coding",
     title: "Live Coding",
     description:
-      "Write real JavaScript functions. Your code is run against hidden test cases.",
+      "Pick your language — JavaScript, Python, C++, or Java — and write a function. Your code is run against hidden test cases.",
   },
   {
     id: "sql",
@@ -187,8 +187,45 @@ const CODING_QUESTIONS: CodingQuestion[] = [
     difficulty: "Easy",
     prompt:
       "Write a function `solve(str)` that returns the input string reversed.\n\nExamples:\n  solve(\"hello\")  -> \"olleh\"\n  solve(\"\")       -> \"\"\n  solve(\"ab\")     -> \"ba\"",
-    signature: "solve(str)",
-    starterCode: "function solve(str) {\n  // your code here\n}",
+    languages: [
+      {
+        language: "javascript",
+        label: "JavaScript (Node)",
+        signature: "solve(str)",
+        starterCode: "function solve(str) {\n  // your code here\n}",
+      },
+      {
+        language: "python",
+        label: "Python 3",
+        signature: "def solve(s):",
+        starterCode: "def solve(s):\n    # your code here\n    return s",
+      },
+      {
+        language: "cpp",
+        label: "C++ (GCC 14)",
+        signature: "string solve(string str)",
+        starterCode: [
+          "#include <bits/stdc++.h>",
+          "using namespace std;",
+          "",
+          "string solve(string str) {",
+          "    // your code here",
+          "    return str;",
+          "}",
+        ].join("\n"),
+      },
+      {
+        language: "java",
+        label: "Java (JDK 17)",
+        signature: "static String solve(String str)",
+        starterCode: [
+          "static String solve(String str) {",
+          "    // your code here",
+          "    return str;",
+          "}",
+        ].join("\n"),
+      },
+    ],
     examples: [
       { args: ["hello"], expected: "olleh" },
       { args: [""], expected: "" },
@@ -209,8 +246,45 @@ const CODING_QUESTIONS: CodingQuestion[] = [
     difficulty: "Medium",
     prompt:
       "Given an array of integers `nums` and an integer `target`, write a function `solve(nums, target)` that returns the indices of the two numbers that add up to `target` as an array `[i, j]`. Assume exactly one solution exists and you may not use the same element twice.\n\nExamples:\n  solve([2,7,11,15], 9) -> [0,1]\n  solve([3,2,4], 6)      -> [1,2]\n  solve([3,3], 6)        -> [0,1]",
-    signature: "solve(nums, target)",
-    starterCode: "function solve(nums, target) {\n  // your code here\n}",
+    languages: [
+      {
+        language: "javascript",
+        label: "JavaScript (Node)",
+        signature: "solve(nums, target)",
+        starterCode: "function solve(nums, target) {\n  // your code here\n  return [0, 0];\n}",
+      },
+      {
+        language: "python",
+        label: "Python 3",
+        signature: "def solve(nums, target):",
+        starterCode: "def solve(nums, target):\n    # your code here\n    return [0, 0]",
+      },
+      {
+        language: "cpp",
+        label: "C++ (GCC 14)",
+        signature: "vector<int> solve(const vector<int>& nums, int target)",
+        starterCode: [
+          "#include <bits/stdc++.h>",
+          "using namespace std;",
+          "",
+          "vector<int> solve(const vector<int>& nums, int target) {",
+          "    // your code here",
+          "    return {0, 0};",
+          "}",
+        ].join("\n"),
+      },
+      {
+        language: "java",
+        label: "Java (JDK 17)",
+        signature: "static int[] solve(int[] nums, int target)",
+        starterCode: [
+          "static int[] solve(int[] nums, int target) {",
+          "    // your code here",
+          "    return new int[]{0, 0};",
+          "}",
+        ].join("\n"),
+      },
+    ],
     examples: [
       { args: [[2, 7, 11, 15], 9], expected: [0, 1] },
       { args: [[3, 2, 4], 6], expected: [1, 2] },
@@ -219,7 +293,7 @@ const CODING_QUESTIONS: CodingQuestion[] = [
       { args: [[2, 7, 11, 15], 9], expected: [0, 1] },
       { args: [[3, 2, 4], 6], expected: [1, 2] },
       { args: [[3, 3], 6], expected: [0, 1] },
-      { args: [[1, 5, 3, 8], 11], expected: [0, 3] },
+      { args: [[1, 5, 3, 8], 11], expected: [2, 3] },
       { args: [[-1, -2, -3, -4, -5], -8], expected: [2, 4] },
     ],
     points: 12,
