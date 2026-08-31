@@ -161,6 +161,22 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     submitRef.current = submit;
   });
 
+  // Auto-submit as soon as every question has an answer (the timer handles the
+  // time-expiry case separately above).
+  useEffect(() => {
+    if (!data) return;
+    const { mcq, coding, sql } = data.questions;
+    const allMcq = mcq.every((q) => answers.mcq[q.id] !== undefined);
+    const allCoding = coding.every((q) => {
+      const c = (answers.coding[q.id] ?? "").trim();
+      return c !== "" && c !== q.starterCode.trim();
+    });
+    const allSql = sql.every((q) => (answers.sql[q.id] ?? "").trim() !== "");
+    if (allMcq && allCoding && allSql && !submittedRef.current) {
+      submitRef.current();
+    }
+  }, [answers, data]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-500">
@@ -427,6 +443,14 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
           {submitting ? "Submitting…" : "Submit Assessment"}
         </button>
       </div>
+
+      {/* Submitting overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-slate-900/70">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+          <p className="font-semibold text-white">Submitting your assessment…</p>
+        </div>
+      )}
     </div>
   );
 }
