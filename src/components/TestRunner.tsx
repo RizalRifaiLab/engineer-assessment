@@ -208,6 +208,11 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
     sql: questions.sql.filter((q) => (answers.sql[q.id] || "").trim() !== "").length,
   };
 
+  const allFilled =
+    answered.mcq === counts.mcq &&
+    answered.coding === counts.coding &&
+    answered.sql === counts.sql;
+
   function setMcq(qid: string, idx: number) {
     setAnswers((a) => ({ ...a, mcq: { ...a.mcq, [qid]: idx } }));
   }
@@ -430,15 +435,23 @@ export function TestRunner({ attemptId }: { attemptId: string }) {
       )}
 
       {/* Footer / submit */}
-      <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-4">
-        <p className="text-xs text-slate-400">
-          {answered.mcq + answered.coding + answered.sql} answered across all
-          sections.
-        </p>
+      <div className="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-slate-400">
+            {answered.mcq + answered.coding + answered.sql} of{" "}
+            {counts.mcq + counts.coding + counts.sql} questions answered.
+          </p>
+          {!allFilled && timeLeft > 0 && (
+            <p className="mt-1 text-xs font-medium text-amber-600">
+              Answer all questions to submit — or the assessment submits
+              automatically when the timer runs out.
+            </p>
+          )}
+        </div>
         <button
           onClick={submit}
-          disabled={submitting}
-          className="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          disabled={submitting || (!allFilled && timeLeft > 0)}
+          className="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {submitting ? "Submitting…" : "Submit Assessment"}
         </button>
